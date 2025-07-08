@@ -1,4 +1,5 @@
 import logging
+import os  # Added for accessing environment variables
 from PIL import Image, ImageDraw
 import torch # Required by diffusers
 
@@ -42,10 +43,17 @@ def load_model():
         return
 
     try:
+        auth_token = os.getenv("HF_TOKEN")
+        if auth_token:
+            logging.info("Using Hugging Face Hub token for model download.")
+        else:
+            logging.info("Hugging Face Hub token not found. Attempting anonymous download.")
+
         logging.info("Attempting to load ONNX model 'stabilityai/stable-diffusion-onnx'...")
         pipe = OnnxStableDiffusionPipeline.from_pretrained(
             "stabilityai/stable-diffusion-onnx",  # ✅ Use a public ONNX model as per user instruction
-            provider="CPUExecutionProvider"       # ✅ CPU-only
+            provider="CPUExecutionProvider",       # ✅ CPU-only
+            use_auth_token=auth_token if auth_token else None
             # revision="onnx" # Not typically needed if the main branch of the repo is already ONNX
             # torch_dtype=torch.float32 # Generally not needed for ONNX pipeline
         )
