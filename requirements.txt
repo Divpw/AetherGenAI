@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pillow
+
+# TODO: Uncomment and add specific versions when integrating the actual model
+# diffusers
+# transformers
+# accelerate
+# onnxruntime
+# onnx
