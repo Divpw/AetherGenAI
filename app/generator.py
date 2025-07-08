@@ -2,145 +2,94 @@ import logging
 from PIL import Image, ImageDraw
 import torch # Required by diffusers
 
+# Import ONNX specific pipeline
+try:
+    from diffusers import OnnxStableDiffusionPipeline
+except ImportError:
+    logging.critical("Diffusers library not found. Please ensure it's installed.")
+    # This allows the rest of the file to be parsed without runtime error if diffusers is missing,
+    # though load_model will fail.
+    OnnxStableDiffusionPipeline = None
+
+
 # Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Using the root logger for simplicity as per user's snippet, or could use a named logger.
+# BasicConfig should ideally be called once at the application entry point (e.g. main.py)
+# For now, let's ensure it's configured if this module is run standalone.
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Global variable to hold the pipeline
-# This is to avoid loading the model multiple times if not necessary,
-# though for a serverless/scaled environment, model loading per request or instance might occur.
-_model_pipeline = None
-_model_loaded_successfully = False
+# Global variables for the pipeline and its status
+pipe = None
+model_loaded = False # Renamed from _model_loaded_successfully to match user snippet
+                     # and made it directly accessible.
 
-def load_model(model_id: str = "CompVis/stable-diffusion-v1-4", device: str = "cpu"):
+def load_model():
     """
-    Loads the Stable Diffusion ONNX pipeline.
-
-    Args:
-        model_id (str): The Hugging Face model ID for the ONNX model.
-                        Example: "runwayml/stable-diffusion-v1-5", "CompVis/stable-diffusion-v1-4"
-                        Ensure the model has ONNX weights available.
-        device (str): The device to run the model on ("cpu" or "cuda").
-
-    Returns:
-        OnnxStableDiffusionPipeline or None: The loaded pipeline, or None if loading fails.
+    Loads the Stable Diffusion ONNX pipeline using "stabilityai/stable-diffusion-onnx".
+    Sets global `pipe` and `model_loaded` variables.
     """
-    global _model_pipeline, _model_loaded_successfully
-    if _model_pipeline is not None:
-        logger.info("Model already loaded.")
-        return _model_pipeline
+    global pipe, model_loaded
+
+    if model_loaded and pipe is not None:
+        logging.info("ONNX model already loaded.")
+        return
+
+    if OnnxStableDiffusionPipeline is None:
+        logging.error("Cannot load ONNX model: OnnxStableDiffusionPipeline could not be imported from diffusers.")
+        model_loaded = False
+        pipe = None
+        return
 
     try:
-        # Import here to avoid import errors if diffusers is not installed during initial setup phases
-        from diffusers import OnnxStableDiffusionPipeline
-
-        logger.info(f"Loading ONNX Stable Diffusion model: {model_id} for {device}...")
-
-        # For ONNX, especially on CPU, we use OnnxStableDiffusionPipeline.
-        # It requires onnxruntime.
-        # We explicitly use float32 for wider CPU compatibility.
-        # The `provider` argument is crucial for ONNX Runtime.
-        # Common providers: 'CPUExecutionProvider', 'CUDAExecutionProvider', 'TensorrtExecutionProvider'
-
-        # Note: Some models might be structured differently or require specific revisions or subfolders.
-        # For "CompVis/stable-diffusion-v1-4", the ONNX weights might need to be converted or sourced
-        # from a specific ONNX-converted repository if not directly available in the main one.
-        # A common pattern is to use a model specifically converted to ONNX, e.g., from Hugging Face Hub.
-        # Example: `pipeline = OnnxStableDiffusionPipeline.from_pretrained("username/stable-diffusion-v1-4-onnx", provider="CPUExecutionProvider")`
-
-        # Let's try a known ONNX model. If "CompVis/stable-diffusion-v1-4" doesn't have direct ONNX weights,
-        # we might need to point to a specific repo that does, or use one like `stabilityai/sd-onnx`
-        # For now, we'll attempt with `CompVis/stable-diffusion-v1-4` and assume it can find ONNX files
-        # or that the user has pre-downloaded/converted them to a local path.
-        # A more robust solution would be to use a model explicitly marked as ONNX.
-        # For example, if `stabilityai/stable-diffusion-2-1-base-onnx` was a thing:
-        # pipeline = OnnxStableDiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-2-1-base-onnx", provider="CPUExecutionProvider")
-
-        # Using a community ONNX version for Stable Diffusion 1.4
-        # This one is known to have ONNX weights: "runwayml/stable-diffusion-v1-5" with revision "onnx"
-        # Or "hf-internal-testing/tiny-stable-diffusion-pipe-onnx" for a very small test
-        # Let's try a community-converted ONNX model for SD 1.4 or 1.5 if direct CompVis one is tricky.
-        # For testing, a smaller model is better: "hf-internal-testing/tiny-stable-diffusion-onnx"
-        # However, for better quality, a full model like "runwayml/stable-diffusion-v1-5" (if ONNX version exists)
-        # or "CompVis/stable-diffusion-v1-4" (if ONNX weights are present or converted) is preferred.
-
-        # Trying with a known ONNX model from Hugging Face.
-        # "diffusers/stable-diffusion-v1-4-onnx" is a community model.
-        # Using "runwayml/stable-diffusion-v1-5" with specific onnx revision
-        # For this example, we will use "CompVis/stable-diffusion-v1-4" and assume it can find/use ONNX files.
-        # If it fails, it highlights the need to ensure the model path *does* contain ONNX compatible files.
-        # A common source for ONNX models is from users who have converted and uploaded them.
-        # Let's use a model ID known to work with ONNX pipeline.
-        # `model_id = "diffusers/stable-diffusion-onnx-v1-4"` - this is a made-up example, use a real one.
-        # `model_id = "runwayml/stable-diffusion-v1-5"` with `revision="onnx"` and `provider="CPUExecutionProvider"`
-        # The original request mentioned "CompVis/stable-diffusion-v1-4". We will stick to it.
-        # The user might need to convert it to ONNX first if not directly available.
-        # Diffusers will attempt to download the appropriate files.
-
-        _model_pipeline = OnnxStableDiffusionPipeline.from_pretrained(
-            model_id,
-            revision="onnx", # Specify ONNX revision if available/needed
-            provider="CPUExecutionProvider", # Explicitly use CPU
-            # torch_dtype=torch.float32 # Usually not needed for ONNX as dtype is part of the ONNX model
-                                      # but can be relevant for intermediate steps if any.
+        logging.info("Attempting to load ONNX model 'stabilityai/stable-diffusion-onnx'...")
+        pipe = OnnxStableDiffusionPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-onnx",  # ✅ Use a public ONNX model as per user instruction
+            provider="CPUExecutionProvider"       # ✅ CPU-only
+            # revision="onnx" # Not typically needed if the main branch of the repo is already ONNX
+            # torch_dtype=torch.float32 # Generally not needed for ONNX pipeline
         )
-
-        logger.info(f"Model {model_id} loaded successfully on {device}.")
-        _model_loaded_successfully = True
-        return _model_pipeline
-    except ImportError:
-        logger.error("Diffusers or ONNXRuntime not installed. Please install them with `pip install diffusers onnxruntime`.")
+        model_loaded = True
+        logging.info("ONNX model 'stabilityai/stable-diffusion-onnx' loaded successfully.")
     except Exception as e:
-        logger.error(f"Failed to load ONNX model {model_id}: {e}")
-        logger.error("This might be because the model does not have ONNX weights readily available under that ID,")
-        logger.error("or due to a network issue, or missing local ONNX model files if a local path was intended.")
-        logger.error("Consider using a model ID specifically converted to ONNX format, e.g., from the Hugging Face Hub.")
-    _model_loaded_successfully = False
-    _model_pipeline = None
-    return None
+        logging.error(f"ONNX model 'stabilityai/stable-diffusion-onnx' failed to load: {e}")
+        logging.error("This could be due to network issues, incorrect model ID, missing ONNX runtime dependencies, or issues with the ONNX model files themselves.")
+        logging.error("Ensure 'onnxruntime' is installed and functional.")
+        model_loaded = False
+        pipe = None
 
-def generate_real_image(pipe, prompt: str, output_path: str = "output.png", num_inference_steps: int = 20) -> bool:
+def generate_real_image(prompt: str, output_path: str = "output.png", num_inference_steps: int = 20) -> bool:
     """
-    Generates an image using the loaded Stable Diffusion ONNX pipeline.
+    Generates an image using the loaded global Stable Diffusion ONNX pipeline.
 
     Args:
-        pipe: The loaded ONNX Stable Diffusion pipeline.
         prompt (str): The text prompt for image generation.
         output_path (str): The path to save the generated image.
-        num_inference_steps (int): Number of diffusion steps. Lower for faster, potentially lower quality.
+        num_inference_steps (int): Number of diffusion steps.
 
     Returns:
         bool: True if image generation and saving were successful, False otherwise.
     """
-    if pipe is None:
-        logger.error("Image generation failed: Model pipeline is not loaded.")
+    global pipe, model_loaded
+    if not model_loaded or pipe is None:
+        logging.error("Image generation failed: Model pipeline is not loaded.")
         return False
 
     try:
-        logger.info(f"Generating image for prompt: '{prompt}' with {num_inference_steps} steps...")
-        # For ONNX pipeline, ensure arguments match its expected signature.
-        # `torch.float32` is generally for PyTorch models; ONNX models have dtypes baked in.
-        # The pipeline handles device placement based on how it was loaded (e.g., CPUExecutionProvider).
+        logging.info(f"Generating real image for prompt: '{prompt}' with {num_inference_steps} steps...")
         image = pipe(prompt, num_inference_steps=num_inference_steps).images[0]
-
         image.save(output_path)
-        logger.info(f"Image saved to {output_path}")
+        logging.info(f"Real image saved to {output_path}")
         return True
     except Exception as e:
-        logger.error(f"Error during image generation or saving: {e}")
+        logging.error(f"Error during real image generation or saving: {e}")
         return False
 
 def generate_fallback_image(prompt: str, output_path: str = "output.png", message: str = "Fallback Image") -> None:
     """
-    Generates a fallback image (a black square with text) and saves it.
-    Used when the main model fails or is unavailable.
-
-    Args:
-        prompt (str): The text prompt (used for context in the message).
-        output_path (str): The path to save the generated image.
-        message (str): A message to display on the fallback image.
+    Generates a fallback image and saves it.
     """
-    img_size = (512, 512) # Standard SD size
+    img_size = (512, 512)
     img = Image.new("RGB", img_size, color="black")
     draw = ImageDraw.Draw(img)
 
@@ -153,53 +102,39 @@ def generate_fallback_image(prompt: str, output_path: str = "output.png", messag
     try:
         for line in text_lines:
             draw.text((10, y_text), line, fill="white")
-            y_text += 20 # Spacing for next line
+            y_text += 20
     except Exception as e:
-        logger.warning(f"Could not draw text on fallback image: {e}")
-        # Fallback image will still be created, just without text.
+        logging.warning(f"Could not draw text on fallback image: {e}")
 
     img.save(output_path)
-    logger.info(f"Fallback image saved to {output_path} (original prompt: '{prompt}')")
+    logging.info(f"Fallback image saved to {output_path} (original prompt: '{prompt}')")
 
-def get_model_status():
+# Renamed from get_model_status to match the direct global variable usage pattern
+# This function isn't strictly needed if app.main directly imports and uses `model_loaded`
+def is_model_loaded():
     """Returns whether the model was loaded successfully."""
-    return _model_loaded_successfully
+    global model_loaded
+    return model_loaded
 
-# Example usage (for testing the generator directly)
+# Example usage for direct testing
 if __name__ == '__main__':
-    logger.info("Testing generator module...")
+    # Ensure logging is configured for standalone run
+    if not logging.getLogger().hasHandlers():
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    # Attempt to load the model
-    # For local testing, you might need to be logged into Hugging Face CLI
-    # or have the model already cached.
-    # `huggingface-cli login`
-    # Using a smaller, known ONNX model for quicker testing if available,
-    # e.g., "hf-internal-testing/tiny-stable-diffusion-onnx"
-    # For now, sticking to the requested one, which might be large to download.
-    # test_model_id = "hf-internal-testing/tiny-stable-diffusion-onnx" # A very small model for testing
-    test_model_id = "CompVis/stable-diffusion-v1-4" # As per original request
+    logging.info("Testing generator module directly...")
+    load_model() # Attempt to load the model
 
-    # It's better to test with a model explicitly designed for ONNX like:
-    # test_model_id = "runwayml/stable-diffusion-v1-5"
-    # and then specify revision="onnx" in load_model.
-    # Or an even smaller one for quick tests: "hf-internal-testing/tiny-stable-diffusion-onnx"
-    # For this run, we'll try "runwayml/stable-diffusion-v1-5" with ONNX revision
-    # as "CompVis/stable-diffusion-v1-4" might not have a direct ONNX revision.
-
-    # Using a specific ONNX model from runwayml
-    # This model is known to have an ONNX variant.
-    pipeline = load_model(model_id="runwayml/stable-diffusion-v1-5")
-
-    if get_model_status() and pipeline:
-        logger.info("Model loaded. Attempting to generate a real image...")
-        success = generate_real_image(pipeline, "A photo of an astronaut riding a horse on the moon", "test_real_output.png", num_inference_steps=10) # Low steps for faster test
+    if is_model_loaded():
+        logging.info("Model loaded. Attempting to generate a real image...")
+        success = generate_real_image("A futuristic city skyline at dusk", "test_real_output.png", num_inference_steps=10)
         if success:
-            logger.info("Test real image generated successfully.")
+            logging.info("Test real image generated successfully: test_real_output.png")
         else:
-            logger.error("Failed to generate real image. Generating fallback.")
+            logging.error("Failed to generate real image. Generating fallback.")
             generate_fallback_image("Test prompt for fallback", "test_fallback_output.png", "Fallback: Real model failed")
     else:
-        logger.warning("Model could not be loaded. Generating fallback image directly.")
+        logging.warning("Model could not be loaded. Generating fallback image directly.")
         generate_fallback_image("Test prompt: Model load failed", "test_fallback_output_model_load_fail.png", "Fallback: Model Load Failed")
 
-    logger.info("Generator module test finished.")
+    logging.info("Generator module test finished.")
