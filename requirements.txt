@@ -1,10 +1,10 @@
 fastapi
 uvicorn[standard]
 pillow
-
-# TODO: Uncomment and add specific versions when integrating the actual model
-# diffusers
-# transformers
-# accelerate
-# onnxruntime
-# onnx
+diffusers
+transformers
+onnxruntime
+safetensors
+accelerate
+# onnx # onnx is often a dependency of onnxruntime, explicit add if needed.
+# torch # diffusers will pull in torch

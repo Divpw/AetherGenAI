@@ -128,6 +128,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Hugging Face cache
+.huggingface/
+.cache/huggingface/
+.cache/torch/
+
 # IDEs and editors
 .idea/
 .vscode/
@@ -142,3 +147,7 @@ output.png
 *.gif
 results/
 outputs/
+dummy_test_output.png
+test_real_output.png
+test_fallback_output.png
+test_fallback_output_model_load_fail.png
