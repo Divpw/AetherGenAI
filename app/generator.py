@@ -49,18 +49,17 @@ def load_model():
         else:
             logging.info("Hugging Face Hub token not found. Attempting anonymous download.")
 
-        logging.info("Attempting to load ONNX model 'stabilityai/stable-diffusion-onnx'...")
+        logging.info("Attempting to load ONNX model 'stabilityai/stable-diffusion-2-1'...")
         pipe = OnnxStableDiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-onnx",  # ✅ Use a public ONNX model as per user instruction
-            provider="CPUExecutionProvider",       # ✅ CPU-only
-            use_auth_token=auth_token if auth_token else None
-            # revision="onnx" # Not typically needed if the main branch of the repo is already ONNX
-            # torch_dtype=torch.float32 # Generally not needed for ONNX pipeline
+            "stabilityai/stable-diffusion-2-1",  # Updated ONNX model ID
+            provider="CPUExecutionProvider",   # ✅ CPU-only
+            use_auth_token=auth_token if auth_token else None,
+            revision="onnx" # Explicitly specify ONNX revision
         )
         model_loaded = True
         logging.info("ONNX model 'stabilityai/stable-diffusion-onnx' loaded successfully.")
     except Exception as e:
-        logging.error(f"ONNX model 'stabilityai/stable-diffusion-onnx' failed to load: {e}")
+        logging.error(f"ONNX model 'stabilityai/stable-diffusion-2-1' failed to load: {e}")
         logging.error("This could be due to network issues, incorrect model ID, missing ONNX runtime dependencies, or issues with the ONNX model files themselves.")
         logging.error("Ensure 'onnxruntime' is installed and functional.")
         model_loaded = False

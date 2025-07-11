@@ -24,7 +24,7 @@ AetherGenAI is a FastAPI-based project designed to serve image generation models
     ```bash
     uvicorn app.main:app --reload
     ```
-    The API will be available at `http://localhost:8000`.
+    The API will be available at ` f`.
 
 ## API Usage (Placeholder)
 
